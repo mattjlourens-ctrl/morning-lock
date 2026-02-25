@@ -1,98 +1,312 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { TaskList } from "@/components/TaskList";
+import { TimePickerModal } from "@/components/TimePickerModal";
+import { Timer } from "@/components/Timer";
+import { useMorningLock } from "@/hooks/useMorningLock";
+import { useScheduledTime } from "@/hooks/useScheduledTime";
+import { router, useFocusEffect } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import React, { useCallback, useState } from "react";
+import {
+  Alert,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+function formatTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
 
-export default function HomeScreen() {
+export default function MorningLockScreen() {
+  const {
+    secondsLeft,
+    completedIds,
+    handleToggle,
+    canUnlock,
+    hardMode,
+    toggleHardMode,
+    handleUnlock,
+    status,
+    frictionPause,
+    frictionCountdown,
+    userTasks,
+    sessionTasks,
+    refreshUserTasks,
+  } = useMorningLock();
+
+  const { time, scheduleTime } = useScheduledTime();
+  const [pickerVisible, setPickerVisible] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshUserTasks();
+    }, [refreshUserTasks]),
+  );
+
+  async function handleTimeSet(hour: number, minute: number) {
+    setPickerVisible(false);
+    const granted = await scheduleTime(hour, minute);
+    if (!granted) {
+      Alert.alert("Permission denied", "Enable notifications in Settings.");
+    }
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="light" />
+      <View style={styles.inner}>
+        <Text style={styles.heading}>Morning Lock</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        {status === "active" && <Timer secondsLeft={secondsLeft} />}
+        {status === "idle" && <Text style={styles.timerIdle}>- -:- -</Text>}
+        {status === "completed" && <Text style={styles.timerDone}>✓</Text>}
+        {status === "failed" && <Text style={styles.timerFailed}>✕</Text>}
+
+        <View style={styles.divider} />
+
+        <View style={styles.taskContainer}>
+          {status === "active" ? (
+            <TaskList
+              tasks={sessionTasks}
+              completedIds={completedIds}
+              onToggle={handleToggle}
+            />
+          ) : status === "completed" || status === "failed" ? (
+            <TaskList
+              tasks={sessionTasks}
+              completedIds={completedIds}
+              onToggle={() => {}}
+            />
+          ) : (
+            userTasks.map((task) => (
+              <View key={task.id} style={styles.idleTask}>
+                <Text style={styles.idleTaskLabel}>{task.label}</Text>
+              </View>
+            ))
+          )}
+
+          {status !== "active" && (
+            <TouchableOpacity
+              style={styles.editTasksBtn}
+              onPress={() => router.push("/edit-tasks")}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.editTasksBtnText}>Edit Tasks</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.alarmSection}>
+          <Text style={styles.alarmLabel}>Morning Alarm</Text>
+          <TouchableOpacity
+            onPress={() => setPickerVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.alarmTime}>
+              {time ? formatTime(time.hour, time.minute) : "——:——"}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.alarmHint}>
+            {time ? "Tap to change" : "Tap to set"}
+          </Text>
+        </View>
+
+        <View style={styles.hardModeRow}>
+          <View>
+            <Text style={styles.hardModeLabel}>Hard Mode</Text>
+            <Text style={styles.hardModeHint}>
+              {hardMode ? "Timer must reach 0:00" : "Complete tasks to unlock"}
+            </Text>
+          </View>
+          <Switch
+            value={hardMode}
+            onValueChange={toggleHardMode}
+            trackColor={{ false: "#1A1A1A", true: "#FFFFFF" }}
+            thumbColor={hardMode ? "#000000" : "#333333"}
+            ios_backgroundColor="#1A1A1A"
+          />
+        </View>
+
+        {canUnlock && status === "active" && (
+          <TouchableOpacity
+            style={styles.unlockButton}
+            onPress={handleUnlock}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.unlockLabel}>Unlock</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {pickerVisible && (
+        <TimePickerModal
+          initialHour={time?.hour ?? 7}
+          initialMinute={time?.minute ?? 0}
+          onConfirm={handleTimeSet}
+          onCancel={() => setPickerVisible(false)}
+        />
+      )}
+
+      {frictionPause && (
+        <View style={styles.frictionOverlay}>
+          <Text style={styles.frictionLabel}>Regain focus</Text>
+          <Text style={styles.frictionCountdown}>{frictionCountdown}</Text>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  screen: {
+    flex: 1,
+    backgroundColor: "#000000",
   },
-  stepContainer: {
-    gap: 8,
+  inner: {
+    flex: 1,
+    paddingHorizontal: 32,
+    paddingTop: 52,
+    alignItems: "center",
+  },
+  heading: {
+    fontSize: 11,
+    letterSpacing: 5,
+    color: "#444444",
+    textTransform: "uppercase",
+    marginBottom: 40,
+  },
+  timerIdle: {
+    fontSize: 80,
+    fontWeight: "200",
+    color: "#2A2A2A",
+    letterSpacing: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  timerDone: {
+    fontSize: 80,
+    fontWeight: "200",
+    color: "#FFFFFF",
+    letterSpacing: 4,
+  },
+  timerFailed: {
+    fontSize: 80,
+    fontWeight: "200",
+    color: "#333333",
+    letterSpacing: 4,
+  },
+  divider: {
+    width: "100%",
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#222222",
+    marginTop: 40,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  taskContainer: {
+    width: "100%",
+  },
+  idleTask: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#1A1A1A",
+  },
+  idleTaskLabel: {
+    fontSize: 15,
+    color: "#888888",
+  },
+  editTasksBtn: {
+    marginTop: 20,
+    alignSelf: "flex-start",
+  },
+  editTasksBtnText: {
+    fontSize: 11,
+    letterSpacing: 4,
+    color: "#AAAAAA",
+    textTransform: "uppercase",
+  },
+  alarmSection: {
+    marginTop: 40,
+    alignItems: "center",
+  },
+  alarmLabel: {
+    fontSize: 10,
+    letterSpacing: 4,
+    color: "#444444",
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  alarmTime: {
+    fontSize: 40,
+    fontWeight: "200",
+    color: "#FFFFFF",
+    letterSpacing: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  alarmHint: {
+    marginTop: 8,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: "#333333",
+    textTransform: "uppercase",
+  },
+  hardModeRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#1C1C1C",
+    paddingBottom: 88,
+  },
+  hardModeLabel: {
+    fontSize: 10,
+    letterSpacing: 4,
+    color: "#444444",
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  hardModeHint: {
+    fontSize: 10,
+    letterSpacing: 1,
+    color: "#2A2A2A",
+    textTransform: "uppercase",
+  },
+  unlockButton: {
+    position: "absolute",
+    bottom: 48,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    paddingHorizontal: 48,
+    paddingVertical: 14,
+  },
+  unlockLabel: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    letterSpacing: 5,
+    textTransform: "uppercase",
+  },
+  frictionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  frictionLabel: {
+    fontSize: 11,
+    letterSpacing: 5,
+    color: "#444444",
+    textTransform: "uppercase",
+    marginBottom: 24,
+  },
+  frictionCountdown: {
+    fontSize: 80,
+    fontWeight: "200",
+    color: "#FFFFFF",
+    letterSpacing: 4,
+    fontVariant: ["tabular-nums"],
   },
 });
