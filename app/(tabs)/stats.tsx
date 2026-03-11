@@ -1,9 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from 'expo-router';
 import { SESSION_HISTORY_KEY, type SessionRecord } from '@/lib/sessionHistory';
+
+function formatTime(totalSeconds: number): string {
+  if (!totalSeconds || totalSeconds < 0) return '0:00:00';
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+  const paddedSeconds = seconds < 10 ? `0${seconds}` : seconds;
+  return `${hours}:${paddedMinutes}:${paddedSeconds}`;
+}
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -16,18 +27,18 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export default function StatsScreen() {
   const [history, setHistory] = useState<SessionRecord[]>([]);
-  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem(SESSION_HISTORY_KEY)
-      .then(raw => {
-        if (raw) setHistory(JSON.parse(raw));
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
+  const loadHistory = useCallback(async () => {
+    const raw = await AsyncStorage.getItem(SESSION_HISTORY_KEY).catch(() => null);
+    const parsed = raw ? JSON.parse(raw) : [];
+    setHistory(parsed);
   }, []);
 
-  if (!loaded) return null;
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [loadHistory])
+  );
 
   const total = history.length;
   const completed = history.filter(r => r.status === 'completed').length;
@@ -36,6 +47,8 @@ export default function StatsScreen() {
   const totalTasksCompleted = history.reduce((sum, r) => sum + r.tasksCompleted, 0);
   const totalOutside = history.reduce((sum, r) => sum + r.outsideSeconds, 0);
   const avgOutside = total > 0 ? Math.round(totalOutside / total) : 0;
+  const totalFocusTime = history.reduce((sum, r) => sum + ((r as SessionRecord & { actualFocusTime?: number }).actualFocusTime ?? (r.totalDuration - r.outsideSeconds)), 0);
+  const avgFocusTime = total > 0 ? Math.round(totalFocusTime / total) : 0;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -51,8 +64,10 @@ export default function StatsScreen() {
         <View style={styles.divider} />
 
         <Row label="Total Tasks Completed" value={String(totalTasksCompleted)} />
-        <Row label="Total Seconds Outside" value={String(totalOutside)} />
-        <Row label="Avg Outside Per Session" value={`${avgOutside}s`} />
+        <Row label="Total Focus Time" value={formatTime(totalFocusTime)} />
+        <Row label="Avg Focus Per Session" value={formatTime(avgFocusTime)} />
+        <Row label="Total Time Outside" value={formatTime(totalOutside)} />
+        <Row label="Avg Outside Per Session" value={formatTime(avgOutside)} />
       </ScrollView>
     </SafeAreaView>
   );

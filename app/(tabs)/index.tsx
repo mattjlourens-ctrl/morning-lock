@@ -35,6 +35,7 @@ export default function MorningLockScreen() {
     userTasks,
     sessionTasks,
     refreshUserTasks,
+    streak,
   } = useMorningLock();
 
   const { time, scheduleTime } = useScheduledTime();
@@ -64,6 +65,10 @@ export default function MorningLockScreen() {
         {status === "idle" && <Text style={styles.timerIdle}>- -:- -</Text>}
         {status === "completed" && <Text style={styles.timerDone}>✓</Text>}
         {status === "failed" && <Text style={styles.timerFailed}>✕</Text>}
+
+        {streak > 0 && (
+          <Text style={styles.streak}>🔥 {streak} day streak</Text>
+        )}
 
         <View style={styles.divider} />
 
@@ -116,9 +121,13 @@ export default function MorningLockScreen() {
 
         <View style={styles.hardModeRow}>
           <View>
-            <Text style={styles.hardModeLabel}>Hard Mode</Text>
+            <Text style={styles.hardModeLabel}>
+              {hardMode ? "Hard Mode" : "Normal Mode"}
+            </Text>
             <Text style={styles.hardModeHint}>
-              {hardMode ? "Timer must reach 0:00" : "Complete tasks to unlock"}
+              {hardMode
+                ? "Finish tasks AND wait for the timer"
+                : "Finish tasks OR timer runs out"}
             </Text>
           </View>
           <Switch
@@ -287,6 +296,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     letterSpacing: 5,
+    textTransform: "uppercase",
+  },
+  streak: {
+    marginTop: 16,
+    fontSize: 13,
+    letterSpacing: 3,
+    color: "#888888",
     textTransform: "uppercase",
   },
   frictionOverlay: {

@@ -10,6 +10,7 @@ const HARD_MODE_KEY = '@morning_lock/hard_mode';
 const ABANDONMENT_NOTIFICATION_KEY = '@morning_lock/abandonment_notification_id';
 const USER_TASKS_KEY = '@morning_lock/user_tasks';
 const SESSION_TASKS_KEY = '@morning_lock/session_tasks';
+const STREAK_KEY = '@morning_lock/streak';
 const DURATION = 30 * 60;
 const ABANDONMENT_SECONDS = 15;
 
@@ -51,6 +52,49 @@ async function restore(): Promise<{ secondsLeft: number; completedIds: string[];
   }
 }
 
+function getLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayDateString(): string {
+  return getLocalDateString(new Date());
+}
+
+function getYesterdayDateString(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateString(d);
+}
+
+async function updateStreak(status: 'completed' | 'failed'): Promise<number> {
+  try {
+    const today = getTodayDateString();
+    const raw = await AsyncStorage.getItem(STREAK_KEY);
+    const data: { currentStreak: number; lastSessionDate: string } = raw
+      ? JSON.parse(raw)
+      : { currentStreak: 0, lastSessionDate: '' };
+
+    if (data.lastSessionDate === today) return data.currentStreak;
+
+    const yesterdayStr = getYesterdayDateString();
+
+    const newStreak = status === 'completed'
+      ? (data.lastSessionDate === yesterdayStr ? data.currentStreak + 1 : 1)
+      : 0;
+
+    await AsyncStorage.setItem(STREAK_KEY, JSON.stringify({
+      currentStreak: newStreak,
+      lastSessionDate: today,
+    }));
+    return newStreak;
+  } catch {
+    return 0;
+  }
+}
+
 export function useMorningLock() {
   const [secondsLeft, setSecondsLeft] = useState(DURATION);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
@@ -63,6 +107,7 @@ export function useMorningLock() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [frictionPause, setFrictionPause] = useState(false);
   const [frictionCountdown, setFrictionCountdown] = useState(3);
+  const [streak, setStreak] = useState(0);
 
   // Always holds the latest values — safe to read from callbacks
   const latestRef = useRef({ secondsLeft, completedIds, status, userTasks, sessionTasks });
@@ -82,6 +127,8 @@ export function useMorningLock() {
   const outsideSecondsRef = useRef(0);
   // Timestamp (ms) when the app most recently went to background while a session was active
   const backgroundStartRef = useRef<number | null>(null);
+  // Ensures at most one SessionRecord is appended per session lifecycle
+  const hasRecordedRef = useRef(false);
 
   // Restore persisted state, task lists, hard mode, and check for cold-start abandonment
   useEffect(() => {
@@ -91,7 +138,8 @@ export function useMorningLock() {
       AsyncStorage.getItem(ABANDONMENT_NOTIFICATION_KEY).catch(() => null),
       AsyncStorage.getItem(USER_TASKS_KEY).catch(() => null),
       AsyncStorage.getItem(SESSION_TASKS_KEY).catch(() => null),
-    ]).then(async ([restoreResult, hardModeRaw, storedNotifId, userTasksRaw, sessionTasksRaw]) => {
+      AsyncStorage.getItem(STREAK_KEY).catch(() => null),
+    ]).then(async ([restoreResult, hardModeRaw, storedNotifId, userTasksRaw, sessionTasksRaw, streakRaw]) => {
       let { secondsLeft, completedIds, status } = restoreResult;
 
       const rawUserTasks: Task[] = userTasksRaw ? JSON.parse(userTasksRaw) : DEFAULT_TASKS;
@@ -126,6 +174,7 @@ export function useMorningLock() {
       setSessionTasks(loadedSessionTasks);
       setStatus(status);
       if (hardModeRaw !== null) setHardMode(JSON.parse(hardModeRaw));
+      if (streakRaw) setStreak(JSON.parse(streakRaw).currentStreak ?? 0);
       setIsLoaded(true);
     });
   }, []);
@@ -148,6 +197,7 @@ export function useMorningLock() {
     AsyncStorage.setItem(SESSION_TASKS_KEY, JSON.stringify(snapshot)).catch(() => {});
     outsideSecondsRef.current = 0;
     backgroundStartRef.current = null;
+    hasRecordedRef.current = false;
   }, []);
 
   // Persist on background; schedule/cancel abandonment notification; trigger friction on return
@@ -218,16 +268,22 @@ export function useMorningLock() {
               const { secondsLeft: frozenSeconds, completedIds: frozenTasks, sessionTasks: frozenSessionTasks } = latestRef.current;
               setStatus('failed');
               persist(frozenSeconds, frozenTasks, 'failed');
-              appendSessionRecord({
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                date: new Date().toISOString(),
-                status: 'failed',
-                totalDuration: DURATION,
-                outsideSeconds: outsideSecondsRef.current,
-                tasksCompleted: frozenTasks.length,
-                totalTasks: frozenSessionTasks.length,
-              }).catch(() => {});
-              outsideSecondsRef.current = 0;
+              if (!hasRecordedRef.current) {
+                hasRecordedRef.current = true;
+                const frozenOutside = outsideSecondsRef.current;
+                outsideSecondsRef.current = 0;
+                appendSessionRecord({
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                  date: new Date().toISOString(),
+                  status: 'failed',
+                  totalDuration: DURATION,
+                  actualFocusTime: DURATION - frozenOutside,
+                  outsideSeconds: frozenOutside,
+                  tasksCompleted: frozenTasks.length,
+                  totalTasks: frozenSessionTasks.length,
+                }).catch(() => {});
+                updateStreak('failed').then(setStreak).catch(() => {});
+              }
             }
           }
         } else if (wentToBackgroundWhileActive.current) {
@@ -296,17 +352,23 @@ export function useMorningLock() {
     setUserTasks(updated);
     setSessionTasks(updated);
     AsyncStorage.setItem(USER_TASKS_KEY, JSON.stringify(updated)).catch(() => {});
-    appendSessionRecord({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      date: new Date().toISOString(),
-      status: 'completed',
-      totalDuration: DURATION,
-      outsideSeconds: outsideSecondsRef.current,
-      tasksCompleted: completedIds.length,
-      totalTasks: sessionTasks.length,
-    }).catch(() => {});
-    outsideSecondsRef.current = 0;
-    backgroundStartRef.current = null;
+    if (!hasRecordedRef.current) {
+      hasRecordedRef.current = true;
+      const frozenOutside = outsideSecondsRef.current;
+      outsideSecondsRef.current = 0;
+      backgroundStartRef.current = null;
+      appendSessionRecord({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        date: new Date().toISOString(),
+        status: 'completed',
+        totalDuration: DURATION,
+        actualFocusTime: DURATION - frozenOutside,
+        outsideSeconds: frozenOutside,
+        tasksCompleted: completedIds.length,
+        totalTasks: sessionTasks.length,
+      }).catch(() => {});
+      updateStreak('completed').then(setStreak).catch(() => {});
+    }
   }, [status, secondsLeft]);
 
   const handleToggle = useCallback((id: string) => {
@@ -332,17 +394,23 @@ export function useMorningLock() {
     setUserTasks(updated);
     setSessionTasks(updated);
     AsyncStorage.setItem(USER_TASKS_KEY, JSON.stringify(updated)).catch(() => {});
-    appendSessionRecord({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      date: new Date().toISOString(),
-      status: 'completed',
-      totalDuration: DURATION,
-      outsideSeconds: outsideSecondsRef.current,
-      tasksCompleted: completedIds.length,
-      totalTasks: sessionTasks.length,
-    }).catch(() => {});
-    outsideSecondsRef.current = 0;
-    backgroundStartRef.current = null;
+    if (!hasRecordedRef.current) {
+      hasRecordedRef.current = true;
+      const frozenOutside = outsideSecondsRef.current;
+      outsideSecondsRef.current = 0;
+      backgroundStartRef.current = null;
+      appendSessionRecord({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        date: new Date().toISOString(),
+        status: 'completed',
+        totalDuration: DURATION,
+        actualFocusTime: DURATION - frozenOutside,
+        outsideSeconds: frozenOutside,
+        tasksCompleted: completedIds.length,
+        totalTasks: sessionTasks.length,
+      }).catch(() => {});
+      updateStreak('completed').then(setStreak).catch(() => {});
+    }
   }, []);
 
   // Re-reads userTasks from storage — called by the index screen on focus after editing
@@ -356,11 +424,11 @@ export function useMorningLock() {
   const allTasksDone = completedIds.length === sessionTasks.length && sessionTasks.length > 0;
   const canUnlock = hardMode
     ? allTasksDone && secondsLeft === 0
-    : allTasksDone;
+    : allTasksDone || secondsLeft === 0;
 
   return {
     secondsLeft, completedIds, handleToggle, canUnlock, hardMode, toggleHardMode,
     resetSession, handleUnlock, status, frictionPause, frictionCountdown,
-    userTasks, sessionTasks, refreshUserTasks,
+    userTasks, sessionTasks, refreshUserTasks, streak,
   };
 }
