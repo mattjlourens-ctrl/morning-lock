@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
+  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -58,7 +59,10 @@ export default function MorningLockScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
-      <View style={styles.inner}>
+      <ScrollView
+        contentContainerStyle={styles.inner}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.heading}>Morning Lock</Text>
 
         {status === "active" && <Timer secondsLeft={secondsLeft} />}
@@ -148,7 +152,7 @@ export default function MorningLockScreen() {
             <Text style={styles.unlockLabel}>Unlock</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
 
       {pickerVisible && (
         <TimePickerModal
@@ -175,9 +179,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#000000",
   },
   inner: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 32,
     paddingTop: 52,
+    paddingBottom: 40,
     alignItems: "center",
   },
   heading: {
