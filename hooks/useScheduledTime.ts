@@ -10,10 +10,16 @@ import {
 export function useScheduledTime() {
   const [time, setTime] = useState<ScheduledTime | null>(null);
 
-  // Restore saved time on mount
+  // Restore saved time on mount and re-schedule to ensure the notification is active
   useEffect(() => {
-    loadScheduledTime().then(saved => {
-      if (saved) setTime(saved);
+    loadScheduledTime().then(async saved => {
+      if (saved) {
+        setTime(saved);
+        const granted = await requestPermissions();
+        if (granted) {
+          await scheduleDailyNotification(saved.hour, saved.minute);
+        }
+      }
     });
   }, []);
 
