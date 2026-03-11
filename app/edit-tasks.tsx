@@ -39,14 +39,14 @@ function EditTaskRow({
       />
       <TouchableOpacity
         onPress={() => onToggleRecurring(task.id)}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         style={styles.iconBtn}
       >
         <Ionicons name="repeat" size={16} color={task.recurring ? '#888888' : '#333333'} />
       </TouchableOpacity>
       <TouchableOpacity
         onPress={() => onDelete(task.id)}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
         <Text style={styles.deleteBtn}>✕</Text>
       </TouchableOpacity>
@@ -72,7 +72,7 @@ export default function EditTasksScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
@@ -149,14 +149,15 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 14,
+    width: '100%',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#1A1A1A',
   },
   input: {
     flex: 1,
     color: '#888888',
-    fontSize: 15,
+    fontSize: 20,
     paddingVertical: 0,
   },
   iconBtn: {
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
   addInput: {
     flex: 1,
     color: '#888888',
-    fontSize: 15,
+    fontSize: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#2A2A2A',
     paddingVertical: 6,

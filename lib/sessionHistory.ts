@@ -7,6 +7,7 @@ export type SessionRecord = {
   date: string; // ISO string
   status: 'completed' | 'failed';
   totalDuration: number; // seconds
+  actualFocusTime: number; // totalDuration - outsideSeconds
   outsideSeconds: number; // accumulated while active
   tasksCompleted: number;
   totalTasks: number;
